@@ -1,0 +1,492 @@
+---
+title: "SSE0_VSG-subtypes_JSo"
+author: "Jaime So"
+date: "12/31/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(reshape2)
+library(ggrepel)
+library(cowplot)
+library(ggsci)
+library(UpSetR)
+library(xlsx)
+library(pheatmap)
+#load in workspace Rdata
+```
+Reference ORFs from each patient concatenated. Will make a file with each of these, then concatenate. $cat *.fa > AllPatient_orf_VSGs.fa 
+
+```{r, eval=FALSE}
+Cd-hit command:
+mergeAllORFS % cd-hit-est -i AllPatient_orf_VSGs.fa -o AllPatient_orf_VSGs_merged.fa -d 0 -c .98 -t 0 -n 8 -G 1 -g 1 -s 0.0 -aL 0.0
+================================================================
+Program: CD-HIT, V4.8.1, Mar 01 2019, 06:12:48
+Command: cd-hit-est -i AllPatient_orf_VSGs.fa -o
+         AllPatient_orf_VSGs_merged.fa -d 0 -c .98 -t 0 -n 8 -G
+         1 -g 1 -s 0.0 -aL 0.0
+
+Started: Mon Dec 14 13:58:57 2020
+================================================================
+                            Output                              
+----------------------------------------------------------------
+total seq: 1205
+longest and shortest : 2865 and 903
+Total letters: 1566450
+Sequences have been sorted
+
+Approximated minimal memory consumption:
+Sequence        : 1M
+Buffer          : 1 X 12M = 12M
+Table           : 1 X 1M = 1M
+Miscellaneous   : 0M
+Total           : 15M
+
+Table limit with the given memory limit:
+Max number of representatives: 533543
+Max number of word counting entries: 98029534
+
+comparing sequences from          0  to       1205
+.
+     1205  finished       1174  clusters
+
+Approximated maximum memory consumption: 27M
+writing new database
+writing clustering information
+program completed !
+
+Total CPU time 0.57
+```
+
+The output from the cd-hit-est run is .clstr file. Using the .clstr file and the concat_RESULTS.txt file, I ran MatchVSG.py (written by Jaclyn Smith). This script provided a cluster reference table .txt file containing a narrowed-down list of VSG-seq identified VSGs with an arbitrarily assigned cluster number.
+
+Load the cluster reference table (first column contains VSGs non-uniquely named with TRINITY pre-fix and the second column contains a corresponding cluster number assigned during cd-hit-est).
+
+```{r, warning=FALSE, include=FALSE}
+
+#concat_RESULTS_raw <- read_tsv("VSGseqResults/AllPatientsRESULTS.txt")
+concat_RESULTS_raw <- concat_RESULTS_raw[!concat_RESULTS_raw$file == "file", ]
+
+#cluster_reference_table <- read_tsv(file = "VSGseqResults/AllPatientClusterReferenceTable.txt", col_names = FALSE)
+
+#Assigning columns names of "VSG" and "cluster" to the cluster reference table.
+colnames(cluster_reference_table) = c('VSG','cluster')
+
+cluster_reference_table
+
+```
+
+Merge the concatenated RESULTS.txt file with the cluster_reference_table.txt file using left_join; left_join will see that the RESULTS.txt file already has a column named "VSG" --> will search the column to make sure all VSGs in the cluster reference table appear -->  match the assigned cluster number to all identically named VSGs --> and append a column to the right of the table with the matched cluster number.
+
+```{r, warning=FALSE, include=FALSE}
+
+SSE0_VSGSeq_RESULTS <- left_join(concat_RESULTS_raw,cluster_reference_table)
+SSE0_VSGSeq_RESULTS
+
+```
+
+Here, I filter the SSE0_VSGSeq_RESULTS datatable for VSGs that have make up greater than 1% of the respective technical replicate (eg. 1% of Patient 23 replicate 3)
+Anything below 1% would imply that the VSG is being expressed by less than 1 parasite which doesn't make sense.
+
+```{r, include=FALSE, warning=FALSE, error=FALSE}
+
+SSE0_VSGs_Final <-
+  SSE0_VSGSeq_RESULTS %>%
+  mutate(Percent = as.numeric(Percent)) %>%
+  filter(Percent >= 1) %>%
+  select(file, patient_number, patient_replicate, cluster, Percent, RPKM, VSG)
+SSE0_VSGs_Final
+
+```
+
+UPDATE: August 2020
+After doing a BLAST search of the VSGs detected by VSG-seq, Cluster 803 was determined to be TgsGP. 
+ANOTHER UPDATE: Monica determined old cluster 803 is new cluster 724 **double check this***
+Below is code to remove Cluster 724 from the dataframe, if desired.
+
+```{r}
+
+SSE0_VSGs_Final <- SSE0_VSGs_Final %>%
+  filter(cluster!= "Cluster 724")
+SSE0_VSGs_Final
+
+
+```
+Here, I group the VSGs that are above the 1% cutoff by patient and include the patient blood sample collection location from the Democratic Republic of the Congo. This allows each patient dataset to be referenced independently.
+
+UPDATE : Monica changed this to make a table of data on locations
+
+```{r, include=FALSE}
+
+# "raw" in each patient variable name means VSG expression is >=1% but not yet filtered for VSGs in a certain number of replicates.
+location_data <- tibble(patient_number = c("1","2","3", 
+                                    "11", "12", "13", "17", "19", 
+                                    "23", 
+                                    "29", "30",
+                                    "33"), 
+                        location=c("A","A", "A",
+                                   "C","C","C","C","C",
+                                   "D",
+                                   "B", "B",
+                                   "E"))
+
+
+```
+
+Here, I concatenate the patients files into a single dataframe. This allows referencing of all patient data later on.
+
+```{r, include=FALSE}
+SSE0_VSGs_Final$patient_number <- as.character(SSE0_VSGs_Final$patient_number)
+
+SSE0_VSGs_Final_Mergedl <- full_join(SSE0_VSGs_Final, location_data, by = "patient_number")
+SSE0_VSGs_Final_Mergedl
+
+```
+
+data frame SSE0_VSGs_Final_Mergedl contains all patient metadata, cluster, trinity VSG ID
+Add VSG N-terminal typing data to the dataframe:
+
+Load output from findVSGNterm.py. input file: translated ORFs from reference AllPatient_orf_VSGs.fa
+not the same input used for cd-hit
+```{r}
+#SSE0_VSGs_Nterm <- read.csv("FindNdomains/AllPatient_orf_VSGs_merged-translated_NtermSummary.csv", header = T)
+colnames(SSE0_VSGs_Nterm)[1] <- c("VSG")
+length(unique(SSE0_VSGs_Nterm$VSG))
+SSE0_VSGs_Nterm$VSG <- as.character(SSE0_VSGs_Nterm$VSG)
+SSE0_VSGs_Nterm <- left_join(SSE0_VSGs_Nterm, cluster_reference_table)
+head(SSE0_VSGs_Nterm)
+
+# how many unique trinity IDs in each set
+length(unique(SSE0_VSGs_Final_Mergedl$VSG))
+length(unique(SSE0_VSGs_Nterm$VSG))
+
+# Apply our filters, consider the VSGs in SSE0_VSGs_Final_Mergedl which are expressed by at least 1 parasite
+SSE0_VSGs_Nterm_final <- SSE0_VSGs_Nterm[SSE0_VSGs_Nterm$cluster %in% SSE0_VSGs_Final_Mergedl$cluster, ]
+length(SSE0_VSGs_Nterm_final$VSG)
+
+
+```
+
+merge N-term typing data and patient metadata by VSG
+```{r}
+SSE0_VSGs_typedFinal <- full_join(SSE0_VSGs_Final_Mergedl, SSE0_VSGs_Nterm_final, by = "cluster")
+SSE0_VSGs_typedFinal
+
+SSE0_VSGs_typedFinal$patient_number <- factor(SSE0_VSGs_typedFinal$patient_number,  levels = c(1, 2, 3, 11, 12, 13, 17, 19, 23, 29, 30, 33))
+
+```
+
+
+
+For quality control, we want to only consider VSG clusters that are expressed in more than one technical replicate for each patient
+```{r}
+middle_unique_list <- SSE0_VSGs_typedFinal %>% dplyr::group_by(patient_number) %>% dplyr::count(cluster) %>% dplyr::filter(n>1) %>% dplyr::ungroup() 
+
+uniqueClusters <- SSE0_VSGs_typedFinal[!duplicated(SSE0_VSGs_typedFinal$cluster), ]
+
+middle_unique <- SSE0_VSGs_typedFinal %>%
+  select(patient_number, location) %>% 
+  distinct()%>%
+  merge(middle_unique_list, by = "patient_number") %>%
+  merge(uniqueClusters %>% select(cluster, nterm_typesubtype), by = "cluster")
+middle_unique
+
+middle_unique$patient_number <- factor(middle_unique$patient_number, levels = c("1", "2", "3", "11", "12", "13", "17", "19", "23", "29", "30", "33"))
+
+middle_patient_VSGs.graph = middle_unique %>% 
+  ggplot(aes(x = patient_number, group = patient_number, fill=location))+
+  geom_bar(stat = "count", size = 0.8, y=0.2, position = position_dodge())+
+  theme_classic(base_size = 22)+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 6))+
+  scale_fill_manual(values = c("A"="darkgoldenrod1",
+                               "C"="darkcyan",
+                               "D"="maroon4",
+                               "B"="olivedrab4",
+                               "E"="orangered2"))+
+  #geom_text(stat='count', aes(label=..count..), vjust=-0.4)+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, size = 20), axis.text.y = element_text(size = 20), axis.title = element_text(size = 20),legend.title = element_text(size = 16), legend.text = element_text(size = 14))+
+  labs(x = "Patient", y = "Number of VSGs")
+middle_patient_VSGs.graph
+
+```
+
+#### **QUESTION: Are any VSGs shared between patients?**
+
+Here, I make an UpSet plot conveying the VSGs in common among patients after a 1% cutoff AND selection for VSGs present in 2+ replicates.
+
+The UpSet plot uses the upset function with a list as the argument. The list contains variables, named for each of the "items" to be compared to one another (eg. patient1, patient2, patient3, etc.) To compare the VSGs/clusters between patients, I search the cluster column and specify each patient in separate variables. The patient_number column was originally a factor, but is converted to a character for parsing purposes.
+
+```{r, include=FALSE, echo=TRUE, message=FALSE}
+
+all_patients_1p_2r_list <- list(
+  patient1 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="1"])),
+  patient2 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="2"])),
+  patient3 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="3"])),
+  patient11 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="11"])),
+  patient12 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="12"])),
+  patient13 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="13"])),
+  patient17 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="17"])),
+  patient19 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="19"])),
+  patient23 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="23"])),
+  patient29 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="29"])),
+  patient30 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="30"])),
+  patient33 = unique(as.character(middle_unique$cluster[middle_unique$patient_number =="33"])))
+
+# In order to color the rows of the UpSet plot, I need to create a dataframe where the first column is the name of the sets (patient_full_name) and the second column is the variable used to compare the sets (patient_number).
+
+patient_meta = data.frame(patient_full_name = c("patient1", "patient2", "patient3", "patient11", "patient12", "patient13", "patient17", "patient19", "patient23", "patient29", "patient30", "patient33"),
+                          patient_number = c("1", "2", "3", "11", "12", "13", "17", "19", "23", "29", "30", "33"))
+patient_meta
+
+# Here I merge the patient_meta dataframe created above with the SSE0_VSGSeq_RESULTS_1p_l dataframe.
+patient_meta_merge = left_join(patient_meta, SSE0_VSGs_typedFinal)
+patient_meta_merge$patient_full_name = as.character(patient_meta_merge$patient_full_name)
+patient_meta_merge
+
+```
+
+
+```{r, include=TRUE, echo=FALSE}
+
+# Here, I call the upset function. I list my sets in reverse order so that they appear in descending order on the plot. I want to keep my sets in the order that I specified (keep.order = TRUE). I want to order the plot by degree so that the shared VSGs appear first (from left to right) on the plot (order.by = "degree"). I want all shared clusters to be shown--no limit (nintestects = NA). I want to indicate the location each patient is from (set.metadata = list(data = df, plots = list(list(type = "text", column = "location")))). I want to specify the color of each row (set.metadata = list(data = df, plots = list(list(type = "matrix_rows", column = "location", colors = c())))).
+
+all_patients_1p_2r_upset_colors <-
+upset(fromList(all_patients_1p_2r_list), sets = c("patient33", "patient30", "patient29", "patient23", "patient19", "patient17", "patient13", "patient12", "patient11", "patient3", "patient2", "patient1"), keep.order = TRUE, order.by = "degree", nintersects = NA, line.size = 0.4, sets.bar.color = c("orangered2", "olivedrab4", "olivedrab4", "maroon4", "darkcyan", "darkcyan", "darkcyan", "darkcyan", "darkcyan", "darkgoldenrod1", "darkgoldenrod1", "darkgoldenrod1"), point.size = 2.8, text.scale = 1.8, mb.ratio = c(0.5, 0.5), sets.x.label = "VSGs per Patient", mainbar.y.label = "Number of VSGs", main.bar.color = "gray8", set.metadata = list(data = patient_meta_merge, plots = list(list(type = "matrix_rows", 
+    column = "location", colors = c("A"="darkgoldenrod1",
+                                    "C"="darkcyan",
+                                    "D"="maroon4",
+                                    "B"="olivedrab4",
+                                    "E"="orangered2"), alpha = 0.6))))
+all_patients_1p_2r_upset_colors
+
+```
+
+extract categories from upset plot
+
+
+##Plotting filtered VSG dataset
+```{r}
+
+#palette <- c("#ffdec2", "#fcab64", "#f27618", "#91a6b4", "#02263d")
+palette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
+# plot number of VSG by type per patient
+a1 <- middle_unique %>% dplyr::group_by(patient_number, nterm_typesubtype) %>%
+  dplyr::summarise(total = n()) %>% 
+  ggplot(aes(x = patient_number, y = total, fill = nterm_typesubtype)) + 
+  geom_bar(stat = "identity", size = 0.8) + 
+  scale_fill_manual(values = palette) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 6)) +
+  theme_classic(base_size = 22) + 
+  ylab("Number of VSGs") + 
+  labs(fill = "N-terminal Subtype") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, size = 20), axis.text.y = element_text(size = 20), axis.title = element_text(size = 20),legend.title = element_text(size = 16), legend.text = element_text(size = 14))+
+  xlab("Patient")
+a1
+
+
+# by region
+a2 <- middle_unique %>% dplyr::group_by(location, nterm_typesubtype) %>%
+  dplyr::summarise(total = n()) %>% 
+  ggplot(aes(x = location, y = total, fill = nterm_typesubtype)) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = palette) + 
+  scale_y_continuous(limits = c(0, 25)) +
+  theme_classic(base_size = 22) + 
+  ylab("Number of VSG") + 
+  labs(fill = "subtype") +
+  xlab("location")
+a2
+
+# percents
+sums <- middle_unique %>% dplyr::group_by(patient_number, nterm_typesubtype) %>%
+  dplyr::summarise(n = n())
+pct <- sums %>% dplyr::group_by(patient_number) %>% dplyr::summarize(total = sum(n)) %>% merge(sums, by = "patient_number")
+pct$pct <- (pct$n / pct$total) * 100
+pct
+
+a3 <-
+  ggplot(pct, aes(x = patient_number, y = pct, fill = nterm_typesubtype)) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = palette) + 
+  scale_y_continuous(limits = c(0, 100)) +
+  theme_classic() + 
+  ylab("percent expressed VSG") + 
+  labs(fill = "subtype") +
+  xlab("patient")
+a3
+
+plot_grid(a1, a3, rel_widths = c(2,1))
+```
+
+##Plot VSG type distribution
+data not filtered by expression level
+total number of VSG types assembled in merged patient dataset
+```{r}
+# do not apply filters by expression level, consider all assembled VSG
+# Plot number of VSGs by assigned type to see the distribution of type expression
+SSE0_VSGs_Nterm$nterm_typesubtype <- as.character(SSE0_VSGs_Nterm$nterm_typesubtype)
+
+SSE0_VSGs_Nterm %>% mutate(nterm_typesubtype = replace_na(nterm_typesubtype, "unknown")) %>% dplyr::group_by(nterm_typesubtype) %>% dplyr::summarise(n = n()) %>%
+  ggplot(aes(x = nterm_typesubtype, y = n, fill = nterm_typesubtype)) + 
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = palette) + 
+  theme_classic()
+SSE0_VSGs_Nterm %>% mutate(nterm_typesubtype = replace_na(nterm_typesubtype, "unknown")) %>% dplyr::group_by(nterm_typesubtype) %>% dplyr::summarise(n = n())
+# definitely more B types assembled from the read set. they do not just dominate by being the most highly expressed type
+```
+
+##Add N-term type data to the cluster heatmap
+Here, I make a heatmap with all 108 clusters and 12 patients.
+
+```{r, include=TRUE}
+
+allpatients_hm = SSE0_VSGs_Final_Mergedl %>% select(file, Percent, cluster)
+allpatients_hm_data = allpatients_hm
+colnames(allpatients_hm_data) <- c("file", "value", "cluster")
+#p1_heatmap.data$file <- unlist(p1_heatmap.data$file)
+#allpatients_hm_data <- unique(allpatients_hm_data) #why is this here?
+#p1_heatmap.data$value <- unlist(p1_heatmap.data)
+allpatients_hm_data
+
+allpatients_hm_data_c <- dcast(allpatients_hm_data, cluster ~ file, value.var = "value")
+allpatients_hm_data_c
+allpatients_hm_data_c2 <- allpatients_hm_data_c[2:length(allpatients_hm_data_c)]
+rownames(allpatients_hm_data_c2) <- allpatients_hm_data_c$cluster
+allpatients_hm_m <- as.matrix(allpatients_hm_data_c2)
+allpatients_hm_m <- allpatients_hm_m[order(-rowMeans(allpatients_hm_m)),]
+allpatients_hm_m[is.na(allpatients_hm_m)] <- 0
+allpatients_hm_m <- allpatients_hm_m + 0.1
+allpatients_hm_m <- log10(allpatients_hm_m)
+allpatients_hm_m
+
+# color columns by location
+ALLannotation.df <- data.frame(unique(SSE0_VSGs_Final_Mergedl[c(1,8)]))
+colnames(ALLannotation.df) <- c("file", "location")
+rownames(ALLannotation.df) <- ALLannotation.df$file[]
+ALLannotation.df <- ALLannotation.df %>%
+  select(location)
+
+# color rows by VSG n-terminal subtype
+Alltypes.df <- data.frame(unique(SSE0_VSGs_typedFinal %>% select(cluster, nterm_typesubtype)))
+colnames(Alltypes.df) <- c("cluster", "nterm_typesubtype")
+rownames(Alltypes.df) <- Alltypes.df$cluster[]
+Alltypes.df <- Alltypes.df %>% select(nterm_typesubtype)
+
+#palette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
+
+colors_each = list(location = c("A"="darkgoldenrod1",
+                                "B"="olivedrab4",
+                                "C"="darkcyan",
+                                "D"="maroon4",
+                                "E"="orangered2"),
+                   nterm_typesubtype = c("A1"="skyblue",
+                                         "A2"="steelblue1",
+                                         "A3"="steelblue",
+                                         "B1"="tomato",
+                                         "B2"="red3"))
+
+allpatients_heatmap = pheatmap(allpatients_hm_m, 
+                               breaks = c(seq(-1, -0.1, length.out = 101), 
+                                          seq(0, 2, length.out = 101)),fontsize_row = 6, 
+                               show_rownames = T, 
+                               cluster_cols = F, 
+                               annotation_col = ALLannotation.df, 
+                               annotation_row = Alltypes.df,
+                               cluster_rows = T, 
+                               treeheight_row = 0, 
+                               treeheight_col = 0, 
+                               color = colorRampPalette(c("white", "white", "gray8"))(201), 
+                               clustering_method = "complete", 
+                               gaps_col = c(3,6,9,12,15,18,21,24,27,30,33), 
+                               annotation_colors = colors_each)
+allpatients_heatmap
+
+#colorRampPalette(brewer.pal(9, "Greys")(breaks=c(0,1,2)))(110)
+
+#write the types of the VSGs that met the 1% and 2 replicate expression cutoff to file
+#write_csv(middle_unique, "SSE0_expressedPatientVSG-types_FINAL.csv")
+#write_csv(SSE0_VSGs_typedFinal, path = "SSE0_allTypedPatient_FINAL.csv")
+```
+
+###Correlation Plots
+
+```{r}
+# I don't know where Sarah saved her SL-RNA qPCR data
+# manually enter mean SL-RNA Ct value from her draft table
+
+SL_Ct <- tibble(patient_number = c(1,2,3,11,12,13,17,19,23,29,30,33),
+                meanSL = c(22.155,19.020,28.780,22.030,25.430,26.635,24.495,28.245,27.085,28.320,22.960,32.385))
+SL_Ct
+
+gambCorr <- middle_unique %>% group_by(patient_number) %>% summarise(totalVSG = n()) %>% merge(SL_Ct, .)
+gambCorr
+
+gamb.cor.coeff <- data.frame(cor = as.character(round(cor(gambCorr[ , "totalVSG"], gambCorr[ , "meanSL"], method = "pearson"), digits = 3)),
+                      x = c(10),
+                      y = c(35))
+
+Ct_VSGs = gambCorr %>%
+  ggplot(aes(x=totalVSG, y=meanSL))+
+  geom_point(stat = "identity")+
+  theme_classic()+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Number of Unique VSGs")+
+  ylab("Mean Ct")+
+  geom_text(data=gamb.cor.coeff, aes(label=cor, x=x, y=y))
+Ct_VSGs
+
+typeCorr <- middle_unique %>% 
+  mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% 
+  group_by(patient_number, nterm_type) %>% 
+  summarise(numType = n()) %>% 
+  merge(gambCorr, ., by="patient_number") %>%
+  mutate(pct = (.$numType / .$totalVSG)*100)
+
+typeCorr
+
+A.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "A" , ] %>% .$pct , typeCorr[typeCorr$nterm == "A" , ] %>% .$meanSL, method = "pearson"), digits = 3)),
+                      x = c(55),
+                      y = c(35))
+
+VSGsA <- typeCorr[typeCorr$nterm == "A",] %>%
+  ggplot(aes(x=pct, y=meanSL))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type A VSG")+
+  ylab("Mean Ct")+
+  geom_text(data=A.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsA
+
+B.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "B" , ] %>% .$pct , typeCorr[typeCorr$nterm == "B" , ] %>% .$meanSL, method = "pearson"), digits = 3)),
+                      x = c(100),
+                      y = c(35))
+
+VSGsB <- typeCorr[typeCorr$nterm == "B",] %>%
+  ggplot(aes(x=pct, y=meanSL))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type B VSG")+
+  ylab("Mean Ct")+
+  geom_text(data=B.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsB
+```
+
+
+```{r}
+
+# consider all assembled VSG that could be typed by HMM-profiles
+SSE0_Assembled <- SSE0_VSGs_Nterm[complete.cases(SSE0_VSGs_Nterm),]
+length(unique(SSE0_Assembled$cluster))
+
+# the number of B-types
+summary(SSE0_Assembled[SSE0_Assembled$nterm_typesubtype == "B1" | SSE0_Assembled$nterm_typesubtype == "B2", ])
+
+dev.off()
+```
+
