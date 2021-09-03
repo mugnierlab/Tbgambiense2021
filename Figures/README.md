@@ -1,4 +1,4 @@
-*R markdown notes and code for generating figures*
+R markdown notes and code for generating figures
 
 * Data files necessary for running are in the subdirectory: FigureData/
 * All markdown files will run from current directory.
