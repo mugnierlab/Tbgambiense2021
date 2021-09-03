@@ -1,0 +1,149 @@
+---
+title: "Supplement-heatmaps"
+author: "Jaime So"
+date: "8/27/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(reshape2)
+library(pheatmap)
+```
+
+* the TbgAssembledVSG.csv file includes not the ~1000 total VSG sequences produced by Trinity but all of the ones that met the 1% expression cutoff in at least one library replicate
+* TbgHighlyExpressed.csv contains the 44 final VSGs which met the 1% cutoff in at least 2 of 3 tenchical replicates and also includes C-terminal types as determined by network plot
+
+#supplement Fig. 1: T.b. gambiense heatmap
+```{r}
+
+tbg_hm <- read_csv("FigureData/TbgAssembledVSG.csv") %>% select(file, Percent, cluster)
+tbg_hm_data <- tbg_hm
+colnames(tbg_hm_data) <- c("file", "value", "cluster")
+
+tbg_hm_data$cluster <- sub("Cluster", "Gambiense", tbg_hm_data$cluster)
+
+tbg_hm_data_c <- dcast(tbg_hm_data, cluster ~ file, value.var = "value")
+tbg_hm_data_c
+tbg_hm_data_c2 <- tbg_hm_data_c[2:length(tbg_hm_data_c)]
+rownames(tbg_hm_data_c2) <- tbg_hm_data_c$cluster
+tbg_hm_m <- as.matrix(tbg_hm_data_c2)
+tbg_hm_m <- tbg_hm_m[order(-rowMeans(tbg_hm_m)),]
+tbg_hm_m[is.na(tbg_hm_m)] <- 0
+tbg_hm_m <- tbg_hm_m + 0.1
+tbg_hm_m <- log10(tbg_hm_m)
+tbg_hm_m
+
+# color columns by location
+tbgannotation.df <- data.frame(unique(read_csv("FigureData/TbgAssembledVSG.csv") %>% .[c(1,8)]))
+colnames(tbgannotation.df) <- c("file", "Location")
+rownames(tbgannotation.df) <- tbgannotation.df$file[]
+tbgannotation.df <- tbgannotation.df %>%
+  select(Location)
+
+# color rows by VSG n-terminal subtype
+tbgtypes.df <- data.frame(unique(read_csv("FigureData/TbgAssembledVSG.csv") %>% select(cluster, nterm_typesubtype)))
+tbgtypes.df$cluster <- sub("Cluster", "Gambiense", tbgtypes.df$cluster)
+colnames(tbgtypes.df) <- c("cluster", "Subtype")
+rownames(tbgtypes.df) <- tbgtypes.df$cluster[]
+tbgtypes.df <- tbgtypes.df %>% select(Subtype)
+
+#palette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
+
+colors_each <- list(Location = c("A"="darkgoldenrod1",
+                                 "B"="olivedrab4",
+                                 "C"="darkcyan",
+                                 "D"="maroon4",
+                                 "E"="orangered2"),
+                    Subtype = c("A1"="skyblue",
+                                "A2"="steelblue1",
+                                "A3"="steelblue",
+                                "B1"="tomato",
+                                "B2"="red3"))
+
+tbg_heatmap <- pheatmap(tbg_hm_m,
+                        breaks = c(seq(-1, -0.1, length.out = 101), 
+                                          seq(0, 2, length.out = 101)),
+                        fontsize_row = 6,
+                        show_rownames = T,
+                        cluster_cols = F,
+                        annotation_col = tbgannotation.df,
+                        annotation_row = tbgtypes.df,
+                        cluster_rows = T,
+                        treeheight_row = 0,
+                        treeheight_col = 0,
+                        color = colorRampPalette(c("white", "white", "gray8"))(201),
+                        clustering_method = "complete",
+                        gaps_col = c(3,6,9,12,15,18,21,24,27,30,33),
+                        annotation_colors = colors_each)
+tbg_heatmap
+
+```
+
+##Supplement Fig. 5: T.b. rhodesiense
+```{r}
+
+# remember to exclude patient 74 from figure
+tbr_hm = read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv") %>% .[!.$patient_number == "74", ]  %>% select(file, Percent, cluster)
+tbr_hm_data = tbr_hm
+colnames(tbr_hm_data) <- c("file", "value", "cluster")
+
+tbr_hm_data$cluster <- sub("Cluster", "Rhodesiense", tbr_hm_data$cluster)
+
+tbr_hm_data_c <- dcast(tbr_hm_data, cluster ~ file, value.var = "value")
+tbr_hm_data_c
+tbr_hm_data_c2 <- tbr_hm_data_c[2:length(tbr_hm_data_c)]
+rownames(tbr_hm_data_c2) <- tbr_hm_data_c$cluster
+tbr_hm_m <- as.matrix(tbr_hm_data_c2)
+tbr_hm_m <- tbr_hm_m[order(-rowMeans(tbr_hm_m)),]
+tbr_hm_m[is.na(tbr_hm_m)] <- 0
+tbr_hm_m <- tbr_hm_m + 0.01
+tbr_hm_m <- log10(tbr_hm_m)
+tbr_hm_m
+
+# color columns by fluid
+tbrannotation.df <- data.frame(unique(read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv") %>% .[c(1,3)]))
+colnames(tbrannotation.df) <- c("file", "Fluid")
+rownames(tbrannotation.df) <- tbrannotation.df$file[]
+tbrannotation.df <- tbrannotation.df %>%
+  select(Fluid)
+
+# color rows by VSG n-terminal subtype
+tbrtypes.df <- data.frame(unique(read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv") %>% select(cluster, nterm_typesubtype)))
+tbrtypes.df$cluster <- sub("Cluster", "Rhodesiense", tbrtypes.df$cluster)
+colnames(tbrtypes.df) <- c("cluster", "Subtype")
+rownames(tbrtypes.df) <- tbrtypes.df$cluster[]
+tbrtypes.df <- tbrtypes.df %>% select(Subtype)
+
+
+#palette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
+
+colors_each = list(Fluid = c("blood"="maroon4",
+                             "CSF"="darkcyan"),
+                   Subtype = c("A1"="skyblue",
+                               "A2"="steelblue1",
+                               "A3"="steelblue",
+                               "B1"="tomato",
+                               "B2"="red3",
+                               "unknown"="lightgrey"))
+
+tbr_heatmap = pheatmap(tbr_hm_m, 
+                               breaks = c(seq(-3, -2, length.out = 101), 
+                                          seq(-1.9, 2, length.out = 101)),fontsize_row = 6, 
+                               show_rownames = T, 
+                               cluster_cols = F, 
+                               annotation_col = tbrannotation.df, 
+                               annotation_row = tbrtypes.df,
+                               cluster_rows = T, 
+                               treeheight_row = 0, 
+                               treeheight_col = 0, 
+                               color = colorRampPalette(c("white", "white", "gray8"))(201), 
+                               clustering_method = "complete", 
+                               annotation_colors = colors_each)
+tbr_heatmap
+
+```
+

@@ -1,0 +1,236 @@
+---
+title: "figure 5"
+author: "Jaime So"
+date: "8/30/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(reshape2)
+library(ggsci)
+library(xlsx)
+library(readxl)
+library(DescTools)
+```
+
+#Figure 5:
+##VSG expression reflects the genomic VSG repertoire of the infecting parasites.
+
+###Tb427 and Tbg972:
+* Sequences acquired from TriTrypDB
+* Tb427 has recently been re-characterized and we used most up-to-date assembly and identified VSG sequences from the genome sequence using HMMscan
+* VSG identified by match to one or more VSG HMM at e-val <= 1e-5
+* annotation information is included in the fasta ID, or in separate file in the case of Tb427
+* run the find_VSG_nterm.py pieline on reference VSGenomes
+
+##Fig. 5A
+Compare highly expressed mouse VSG over all time points to the genomic repertoire of infecting strain EATRO1125
+* EATRO VSG sequences obtained from George Cross's website: https://tryps.rockefeller.edu/Sequences.html 
+* EATRO VSGs typed using HMM pipeline find_VSG_nterm.py
+
+```{r}
+
+# compare mouse to EATRO1125 reference strain genomic VSG repertoire
+# this is the parasite strain the mice were infected with
+mouse <- read_csv("FigureData/Mugnier2015_allMiceTyped.csv")
+# I will exclude untyped VSG
+# extract all unique VSG sequence IDs and their types, drop rows with dulicated data
+# make sure the VSG that are shared between mice are still represented in all mice
+mouse <- mouse[complete.cases(mouse), ] %>% select(VSG, mouse, time, nterm_typesubtype) %>% .[!duplicated(.), ]
+
+# compare individual mice, for mouse three split early (0-30 dpi) and late (96-105 dpi)
+mouse <- mouse %>% group_by(mouse, time, nterm_typesubtype) %>% summarise(n = n())
+
+# summarize further, find percent by type, rename source for plotting
+# organize the plot so I can bind to a summary of the refernce Tb1125 repertoire
+mouse <- mouse %>% mutate(source = ifelse(time == "early", " (0-30 dpi)", " (96-105 dpi)")) %>% group_by(mouse, time) %>% mutate(total = sum(n)) %>% ungroup() %>% mutate(percent = (n / total)*100) %>% select(mouse, source, nterm_typesubtype, n, total, percent) 
+
+mouse <- mouse %>% mutate(source = paste0(sub("m", "mouse ", mouse), source)) %>% select(source, nterm_typesubtype, n, total, percent)
+
+EATRO1125types <- read_csv("FigureData/vsgs_tb1125_nodups_atleast250aas_pro_NtermSummary.csv")
+
+# make subtypes that are "NA" "unknown" instead to make plotting easier
+EATRO1125types <- EATRO1125types %>% mutate(nterm_typesubtype = replace_na(nterm_typesubtype, "unknown"))
+
+# exclude untyped VSG
+plotEATRO <- EATRO1125types[!EATRO1125types$nterm_typesubtype == "unknown", ] %>% mutate(source = "EATRO1125") %>%  group_by(source, nterm_typesubtype) %>% summarise(n = n()) %>% mutate(total = sum(n)) %>% mutate(percent = (n / total)*100)  %>% ungroup()
+
+plotEATRO <- bind_rows(plotEATRO, mouse)
+plotEATRO
+
+Fig5A <- plotEATRO %>% ggplot(aes(x = source, y = percent, fill = nterm_typesubtype)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("skyblue", "steelblue1", "steelblue", "tomato", "red3")) + 
+  scale_y_continuous(limits = c(0, 105)) +
+  theme_classic() + 
+  ylab("Percent VSG") + 
+  labs(fill = "Subtype") +
+  geom_text(data = plotEATRO, aes(x = source, y = 105, label = total, fill = NULL))
+Fig5A
+
+# construct contingency tables to calculate chi-square statistic
+# is the observed type expression dependent on the composition of the repertoire?
+
+# the proportion of each type
+plotEATRO %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(percent)/100)
+# do the observed frequencies differ significantly from the expected?
+
+EATROproportions <- plotEATRO %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(percent)/100)
+
+# the proportions of A and B types of EATRO 1125 represent our expected frequencies
+expected <- EATROproportions[EATROproportions$source == "EATRO1125", ] %>% .$comp
+expected
+
+# calculate chi square using counts of A types and B types by source
+plotEATRO %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(n))
+
+comp1125 <- plotEATRO %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(n)) %>% .$comp
+
+contingency1125 <- matrix(comp1125, nrow = 2, ncol = 6, byrow = F, dimnames = list(c("A", "B"), c(unique(EATROproportions$source))))
+contingency1125
+
+# does the observed count for each set of VSG differ from the expected frequency (i.e. the proportion of types in the genomic repertoire of EATRO 1125)?
+
+# chi-squared test of independence on the whole table
+# this tests whether there is a relationship between source and type (A or B)
+contingency1125
+
+chisq.test(contingency1125, correct = F)
+
+# a table of expected frequencies
+chisq.test(contingency1125) %>% .$expected
+# the table of observed counts
+chisq.test(contingency1125) %>% .$observed
+# residuals show positive and negative associations
+chisq.test(contingency1125) %>% .$residuals
+
+# if the p-vlaue not significant, then the relative frequencies of A and B are identical over all sources
+
+# pairwise comparisons 
+# do the observed type frequencies in mice differ significantly from the expected proportions in EATRO1125 genomic repertoire
+# mouse 1
+chisq.test(contingency1125[,2], p = expected)
+# mouse 2
+chisq.test(contingency1125[,3], p = expected)
+# mouse 3 0-30 dpi
+chisq.test(contingency1125[,4], p = expected)
+# mouse 3 96-105 dpi
+chisq.test(contingency1125[,5], p = expected)
+# mouse 4
+chisq.test(contingency1125[,6], p = expected)
+
+# observed type frequencies in mouse infections do not consistently significantly differ from the expected proportions
+# only mouse 1 had p-value < 0.05
+# chi-square on whole table had p-value > 0.05, suggesting relative independence of variables. in other words, no difference in A/B frequency between repertoire and expressed VSG types
+
+```
+
+##Fig. 5B
+###Compare patient sets to Tb Lister427 or TbgDAL972 references
+```{r}
+
+# import all typed Lister 427 VSGs
+Tb427types <- read_csv("FigureData/VSG.TbruceiLister427_2018_NtermSummary.csv")
+
+# import typed TbgDAL972
+DAL972types <- read_csv("FigureData/VSG.TbruceigambienseDAL972_NtermSummary.csv")
+
+# import rhodesiense patient data
+rhodesiense <- read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv")
+#drop patient 74 since it was sequenced differently than all the others
+rhodesiense <- rhodesiense[!rhodesiense$patient_number == "74", ]
+
+# drop duplicates, pick out the types of each unique cluster
+rhodesiense <- rhodesiense %>% select(cluster, nterm_typesubtype) %>% .[!duplicated(.$cluster), ]
+
+rhodesiense <- rhodesiense %>% mutate(source = "T.b. rhodesiense Patient") %>%  group_by(source, nterm_typesubtype) %>% summarise(n = n()) %>% mutate(total = sum(n)) %>% mutate(percent = (n / total)*100)  %>% ungroup()
+rhodesiense
+# the unknown VSG in rhodesiense set did not have detectable N-terminal domains by our hmmscan analysis, which required a 1e-5 e-value match to the hmm profile
+# our ncbi blast of all assembled sequence clusters suggested that these sequences were VSG, they are likely to be incompletely assembled. 
+# this makes sense considering the low calculated expression level of these unknowns, they may have been rare variants and the eneriched RNA-seq did not provide the depth for them to assemble completely
+
+# import gambiense patient data
+gambiense <- read_csv("FigureData/TbgHighlyExpressed.csv")
+# drop duplicates, pick out the types of each unique cluster
+gambiense <- gambiense %>% select(cluster, nterm_typesubtype) %>% .[!duplicated(.$cluster), ]
+
+gambiense <- gambiense %>% mutate(source = "T.b. gambiense Patient") %>%  group_by(source, nterm_typesubtype) %>% summarise(n = n()) %>% mutate(total = sum(n)) %>% mutate(percent = (n / total)*100)  %>% ungroup()
+gambiense
+
+plot427 <- Tb427types %>% mutate(source = "Lister 427") %>%  group_by(source, nterm_typesubtype) %>% summarise(n = n()) %>% mutate(total = sum(n)) %>% mutate(percent = (n / total)*100)  %>% ungroup()
+
+plotDAL972 <- DAL972types %>% mutate(source = "TbgDAL 972") %>%  group_by(source, nterm_typesubtype) %>% summarise(n = n()) %>% mutate(total = sum(n)) %>% mutate(percent = (n / total)*100)  %>% ungroup()
+
+comparePatient <- bind_rows(rhodesiense, gambiense, plot427, plotDAL972)
+
+Fig5B <- comparePatient %>% 
+  mutate(source = factor(source, levels = c("Lister 427", "T.b. rhodesiense Patient", "TbgDAL 972", "T.b. gambiense Patient"))) %>%
+  ggplot(aes(x = source, y = percent, fill = nterm_typesubtype)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")) + 
+  scale_y_continuous(limits = c(0, 105)) +
+  theme_classic() + 
+  ylab("Percent VSG") + 
+  labs(fill = "Subtype") +
+  geom_text(data = comparePatient, aes(x = source, y = 105, label = total, fill = NULL))
+Fig5B
+
+# find the proportion of each type
+# Lister 427 has the most complete VSGenome with 3534 annotated and typed sequences
+# we will use Lister 427 as the basis of comparison, it represents the underlying genomic repertoire and thus the expected proportions of A and B types
+comparePatient[!comparePatient$nterm_typesubtype == "unknown", ] %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(percent)/100)
+comparePatient
+
+proportions427 <- comparePatient %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(percent)/100)
+
+# the proportions of A and B types of EATRO 1125 represent our expected frequencies
+expected427 <- proportions427[proportions427$source == "Lister 427", ] %>% .$comp
+expected427
+expectedDAL <- proportions427[proportions427$source == "TbgDAL 972", ] %>% .$comp
+expectedDAL
+
+# calculate chi square using counts of A types and B types by source
+compPatient <- comparePatient %>% mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% group_by(source, nterm_type) %>% summarise(comp = sum(n)) %>% .$comp
+
+contingencyPatient <- matrix(compPatient, nrow = 2, ncol = 4, byrow = F, dimnames = list(c("A", "B"), c("Lister 427", "gambiense", "rhodesiense", "TbgDAL 972")))
+contingencyPatient
+
+# chi-squared test of independence on the whole table
+# this tests whether there is a relationship between source and type (A or B)
+chisq.test(contingencyPatient)
+
+# a table of expected frequencies
+chisq.test(contingencyPatient) %>% .$expected
+# the table of observed counts
+chisq.test(contingencyPatient) %>% .$observed
+# residuals show positive and negative associations
+chisq.test(contingencyPatient) %>% .$residuals
+
+# p-value = 0.0002593 reject the null hypothesis, there is an association between source and A or B-type frequency
+
+# take a closer look at individual associations
+# counts of expressed T.b. gambiense N-domain types
+contingencyPatient[,2]
+chisq.test(contingencyPatient[,2], p = expected427)
+# significant, reject null. observed A and B type frequency differs from expected
+
+# compare to the proportions present in annotated TbgDAL 972 genome
+chisq.test(contingencyPatient[,2], p = expectedDAL)
+
+# compare Tbg DAL972 frequency to lister 427
+chisq.test(contingencyPatient[,4], p = expected427)
+
+# counts of expressed T.b. rhodesiense N-domain types
+contingencyPatient[,3]
+chisq.test(contingencyPatient[,3], p = expected427)
+# do not reject null, not a significant difference
+
+# tbr compared to DAL972
+chisq.test(contingencyPatient[,3], p = expectedDAL)
+
+# tbr compared to tbg patient frequencies
+chisq.test(contingencyPatient[,c(2,3)])
+```

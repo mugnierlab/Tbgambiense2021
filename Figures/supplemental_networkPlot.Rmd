@@ -1,0 +1,260 @@
+---
+title: "N-terminal Network Plot"
+author: "Jaime So"
+date: "9/2/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(reshape2)
+library(readxl)
+library(igraph)
+```
+
+##Import tables of known N-terminal types which will color code our reference set to assign types to clusters
+```{r}
+
+# previous typing data has different VSG gene names, rename them
+knownTypes <- read_xlsx("FigureData/All_VSG_BLASTtreeNterm.types.xlsx")
+knownTypes <- knownTypes[grep("Tb427", knownTypes$ID), ]
+translateID <-read_tsv("GAMC_VSGnome2Tb427_2018.translation.txt",col_names = F)
+colnames(translateID) <- c("old_name", "new_name")
+
+nameChange <- inner_join(knownTypes[grep("VSG", knownTypes$ID), ], translateID, by = c("ID"="old_name"))
+nameChange <- nameChange %>% select(new_name, Nterm)
+colnames(nameChange) <- c("ID", "Nterm")
+
+knownTypes <- knownTypes[-grep("VSG", knownTypes$ID), ]
+knownTypes <- rbind(knownTypes, nameChange)
+
+knownTypes$colors <- ifelse(knownTypes$Nterm == "A1", "skyblue", knownTypes$Nterm)
+knownTypes$colors <- ifelse(knownTypes$Nterm == "A2", "steelblue1", knownTypes$colors)
+knownTypes$colors <- ifelse(knownTypes$Nterm == "A3", "steelblue", knownTypes$colors)
+knownTypes$colors <- ifelse(knownTypes$Nterm =="B1", "tomato", knownTypes$colors)
+knownTypes$colors <- ifelse(knownTypes$Nterm =="B2", "red3", knownTypes$colors)
+
+#import cluster reference table to rename patient VSG by cluster name rather than Trinity ID
+cluster_reference_table <- read_csv("FigureData/NetworkPlot_clusterReference.csv")
+
+```
+
+##Import blast output, these will be network links
+
+* the all-vs-all protein blast done to produce the table of links included rhodesiense patient, gambiense patient, and all Tb427 VSG sequences
+* since C-terminal network analysis was only done for gambiense patients, the following plots will only include the tb427 reference and highly expressed gambiense VSG
+* the filters can be adjusted to include whatever subset of links
+* the following code works best when the number of nodes plotted is < 1000
+
+```{r}
+
+Nlinks <- read_csv("FigureData/NterminalNetwork.csv", col_names=F)
+colnames(Nlinks) <- c("from", "to", "evalue")
+Nlinks$from <- as.character(Nlinks$from)
+Nlinks$to <- as.character(Nlinks$to)
+
+# filter Nlinks so that we include only expressed patient VSGs
+# import tables of expressed patient VSG
+# rhodesiense data from Christine Clayton's group, hence CC
+CCexpressed <- read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv")
+#remove patient 74
+CCexpressed <- CCexpressed[!CCexpressed$patient_number==74, ]
+CCexpressed$cluster <- sub("Cluster", "Rhodesiense", CCexpressed$cluster)
+CCexpressed <- CCexpressed %>% select(cluster, original_seq_length, nterm_seq_length, nterm_typesubtype) %>% .[!duplicated(.$cluster), ]
+
+# gambiense data sequenced by Sarah, so SS
+SSexpressed <- read_csv("FigureData/TbgAssembledVSG.csv")
+SSexpressed$cluster <- sub("Cluster", "Gambiense", SSexpressed$cluster) 
+# filter to include just the highly expressed VSG
+SS_list <- SSexpressed %>% dplyr::group_by(patient_number) %>% dplyr::count(cluster) %>% dplyr::filter(n>1) %>% dplyr::ungroup() 
+SSexpressed <- SSexpressed[SSexpressed$cluster %in% SS_list$cluster, ] %>% select(cluster, original_seq_length, nterm_seq_length, nterm_typesubtype) %>% distinct()
+
+patient_hmmscan <- bind_rows(SSexpressed, CCexpressed)
+colnames(patient_hmmscan)[1] <-"original_seqID"
+patient_hmmscan
+
+expressed <- c(SSexpressed$cluster, CCexpressed$cluster)
+
+#add to knownTypes table as unknowns so we can color code them in network plots
+unknowns <- tibble(ID = expressed)
+unknowns$Nterm <- ifelse(grepl("Gambiense", unknowns$ID), "Gam", "Rho")
+unknowns$colors <- ifelse(grepl("Gambiense", unknowns$ID), "white", "yellow")
+
+knownTypes <- bind_rows(knownTypes, unknowns)
+
+# rename patient VSG trinity IDs by cluster using the cluster reference table and filter so we only include expressed clusters
+PtoNlink <- Nlinks[grep("TRINITY", Nlinks$to, value = F), ]
+PtoNlink <- PtoNlink %>%
+  inner_join(cluster_reference_table, by = c('to'='VSG')) %>%
+  select(-to, to = cluster)
+PtoNlink <- PtoNlink %>% select(from, to, evalue)
+PtoNlink <- PtoNlink[PtoNlink$to %in% expressed, ]
+
+filter_Nlinks <- Nlinks[-grep("TRINITY", Nlinks$to, value = F), ]
+filter_Nlinks <- rbind(filter_Nlinks, PtoNlink)
+
+PfromNlink <- filter_Nlinks[grep("TRINITY", filter_Nlinks$from, value = F), ]
+PfromNlink <- PfromNlink %>%
+  inner_join(cluster_reference_table, by = c('from'='VSG')) %>%
+  select(-from, from = cluster)
+PfromNlink <- PfromNlink %>% select(from, to, evalue)
+PfromNlink <- PfromNlink[PfromNlink$from %in% expressed, ]
+
+filter_Nlinks <- filter_Nlinks[-grep("TRINITY", filter_Nlinks$from, value = F), ]
+filter_Nlinks <- rbind(filter_Nlinks, PfromNlink)
+
+# check to make sure all expressed VSG are in table
+# expect rhodesiense to be missing the 5 unknown-type clusters since they had undefined n-termini
+unique(filter_Nlinks$from[grep("Gambiense", filter_Nlinks$from, value = F)])
+unique(filter_Nlinks$from[grep("Rhodesiense", filter_Nlinks$from, value = F)])
+
+unique(filter_Nlinks$to[grep("Gambiense", filter_Nlinks$to, value = F)])
+unique(filter_Nlinks$to[grep("Rhodesiense", filter_Nlinks$to, value = F)])
+
+# there may be too many nodes to plot, if this happens we will see a cloud rather than distinct clusters
+# may want to filter out pseudogenes or fragments
+# the hmm profile typing output has sequence length information that will allow me to filter out sequence ID's for fragments. a complete VSG should be ~400 AA's long
+
+#import hmm pipeline output for Lister 427
+hmmscan <- read_csv("FigureData/VSG.TbruceiLister427_2018_NtermSummary.csv")
+#select relevant columns and filter for most likely complete VSGs >400AA
+filter_hmmscan <- hmmscan %>% select(original_seqID, original_seq_length, nterm_seq_length ,nterm_typesubtype) %>% filter(original_seq_length>400 & nterm_seq_length>100) %>% filter(!grepl("pseudogene", .$original_seqID))
+
+#add the hmm types from the patient sets to filter_hmmscan
+filter_ref <- bind_rows(filter_hmmscan, patient_hmmscan)
+filter_ref <- inner_join(filter_ref, knownTypes, by = c("original_seqID" = "ID"))
+
+# finish filtering using inner join
+filter_NlinksFinal <- inner_join(filter_Nlinks, filter_ref[,1], by = c("to" = "original_seqID")) 
+filter_NlinksFinal <- inner_join(filter_NlinksFinal, filter_ref[,1], by = c("from" = "original_seqID"))
+
+length(unique(filter_NlinksFinal$from))
+length(unique(filter_NlinksFinal$to))
+length(filter_ref$original_seqID)
+
+#curate node information
+# node information will be used later to color code plot based on other typing methods
+nodes <- arrange(unique(filter_NlinksFinal[1]), from)
+node_info <- inner_join(nodes, filter_ref, by = c("from" = "original_seqID")) %>% select(from, Nterm, colors)
+
+#exclude anything that is aligning to itself
+exclude_self <- filter_NlinksFinal[!(filter_NlinksFinal$from == filter_NlinksFinal$to),]
+exclude_self <- exclude_self %>% select(from, to, evalue)
+
+```
+
+
+```{r}
+
+# legends for the known VSG plot
+typeVSGpalette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "white")
+group_ids <- lapply(node_info %>% split(.$Nterm), function(grp) { grp$from })
+
+# here I will only plot reference set and the gambiense patients
+Gambiense <- exclude_self[!(grepl("Rhodesiense", exclude_self$from)), ] %>% .[!(grepl("Rhodesiense", .$to)), ]
+
+gambiense_cutoff3 <- filter(Gambiense, evalue < 1e-3)
+gambiense3 <- graph_from_data_frame(d=gambiense_cutoff3, vertices=node_info[!(grepl("Rhodesiense", node_info$from)), ], directed=F)
+gambiense_simple3 <- igraph::simplify(gambiense3, remove.multiple = T, remove.loops = T)
+gambiense_cluster3 <- cluster_leading_eigen(gambiense_simple3)
+
+
+gambiense_community3 <- gambiense_cluster3$membership
+# extract seq ID from the network plot dataframe
+gv3 <- as_ids(V(gambiense_simple3))
+# each of these can be the column of the dataframe
+gv3com <- data.frame(gv3,gambiense_community3)
+colnames(gv3com) <- c("original_seqID", "eigen_cluster")
+gv3com <- merge(gv3com, filter_ref)
+gv3com$eigen_cluster <- as.factor(gv3com$eigen_cluster)
+
+gcom3_ids <- lapply(gv3com %>% split(.$eigen_cluster), function(grp) { grp$VSG })
+gcolor3 <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
+gv3com$Colors <- gcolor3[gv3com$eigen_cluster]
+
+par(mfrow=c(1,2))
+set.seed(1234) #keeps the orientation the same for each graph iteration. Don't delete even though it seems redundant
+plot(gambiense_cluster3 #cluster communities
+     , gambiense_simple3 #maps the vertices and edges
+     , edge.color = "grey50" 
+     , vertex.size = 7
+     , asp = 0
+     , edge.arrow.size = 0
+     , edge.width = 1
+     , vertex.label = NA)
+title("leading eigen clusters", cex.main = 1) #plot title
+legend("bottomleft", bty = "n",
+       legend = levels(gv3com$eigen_cluster),
+       col= color3[as.numeric(levels(gv3com$eigen_cluster))],pch = 19, pt.cex = 1.2, cex=0.8, horiz = FALSE)
+
+set.seed(1234)
+plot(gambiense_simple3
+     , edge.color = "grey50" 
+     , vertex.size = 7
+     , asp = 0
+     , edge.arrow.size = 0
+     , edge.width = 2
+     , vertex.label = NA
+     , vertex.color = node_info[!(grepl("Rhodesiense", node_info$from)), ] %>% .$colors)
+title("1e-3 evalue cutoff", cex.main = 1)
+legend('bottomleft', legend = names(group_ids[1:6]),
+       col = typeVSGpalette[1:6],
+       pch = 19, bty = "n",  pt.cex = 1.5, cex = 0.8, 
+       text.col = "black", horiz = FALSE)
+
+communities(gambiense_cluster3)
+
+gambiense_cutoff2 <- filter(Gambiense, evalue < 1e-2)
+gambiense2 <- graph_from_data_frame(d=gambiense_cutoff2, vertices=node_info[!(grepl("Rhodesiense", node_info$from)), ], directed=F)
+gambiense_simple2 <- igraph::simplify(gambiense2, remove.multiple = T, remove.loops = T)
+gambiense_cluster2 <- cluster_leading_eigen(gambiense_simple2)
+
+
+gambiense_community2 <- gambiense_cluster2$membership
+# extract seq ID from the network plot dataframe
+gv2 <- as_ids(V(gambiense_simple2))
+# each of these can be the column of the dataframe
+gv2com <- data.frame(gv2,gambiense_community2)
+colnames(gv2com) <- c("original_seqID", "eigen_cluster")
+gv2com <- merge(gv2com, filter_ref)
+gv2com$eigen_cluster <- as.factor(gv2com$eigen_cluster)
+
+gcom2_ids <- lapply(gv2com %>% split(.$eigen_cluster), function(grp) { grp$VSG })
+gcolor2 <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00")
+gv2com$Colors <- gcolor2[gv2com$eigen_cluster]
+
+par(mfrow=c(1,2))
+set.seed(1234) #keeps the orientation the same for each graph iteration. Don't delete even though it seems redundant
+plot(gambiense_cluster2 #cluster communities
+     , gambiense_simple2 #maps the vertices and edges
+     , edge.color = "grey50" 
+     , vertex.size = 7
+     , asp = 0
+     , edge.arrow.size = 0
+     , edge.width = 0.8
+     , vertex.label = NA)
+title("leading eigen clusters", cex.main = 1) #plot title
+legend("bottomleft", bty = "n",
+       legend = levels(gv2com$eigen_cluster),
+       col= color2[as.numeric(levels(gv2com$eigen_cluster))],pch = 19, pt.cex = 1.2, cex=0.8, horiz = FALSE)
+
+set.seed(1234)
+plot(gambiense_simple2
+     , edge.color = "grey50" 
+     , vertex.size = 7
+     , asp = 0
+     , edge.arrow.size = 0
+     , edge.width = 0.8
+     , vertex.label = NA
+     , vertex.color = node_info[!(grepl("Rhodesiense", node_info$from)), ] %>% .$colors)
+title("1e-2 evalue cutoff", cex.main = 1)
+legend('bottomleft', legend = names(group_ids[1:6]),
+       col = typeVSGpalette[1:6],
+       pch = 19, bty = "n",  pt.cex = 1.5, cex = 0.8, 
+       text.col = "black", horiz = FALSE)
+
+communities(gambiense_cluster2)
+
+```

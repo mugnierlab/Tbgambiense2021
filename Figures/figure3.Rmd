@@ -1,0 +1,231 @@
+---
+title: "figure3"
+author: "Jaime So"
+date: "8/27/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Generate Plots for Figure 3
+##T.b. rhodesiense samples reveal diverse VSG expression, but little N-terminal type bias
+
+RNA-seq libraries unenriched for VSG sequences, prepared by either oligo-d(T) selection or rRNA depletion. Sequenced by Christine Clayton's group
+
+Citation:
+Mulindwa J, Leiss K, Ibberson D,  Kamanyi Marucha K, Helbig C, Melo do  Nascimento L, et al. (2018) Transcriptomes of Trypanosoma brucei rhodesiense from sleeping sickness patients, rodents and culture: Effects of strain, growth conditions and RNA preparation methods. PLoS Negl Trop Dis 12(2): e0006280. https://do i.org/10.1371/j ournal.pntd. 0006280
+
+These did not have technical replicates made, libraries were sequenced multiple times at different depths (we emailed them to make sure). For this reason, all repositories for the same patient/sample type were concatenated to aid in ORF assembly since it was all effectively just more read depth. I confirmed this was the case by assembling the files for each patient separately for a first run and the results agreed way too much for them to not be the same library.
+
+#raw Sequencing Data Available Via BioProject Accession:
+* PRJEB27207 for blood samples
+* PRJEB18523 for CSF
+
+
+##All Cluster BLASTp of VSGseq results
+Some things that are identified as VSG are not actually VSGs, or not the kind we are interested in. For example, SRA is derived from VSG and can be assigned an N-domain type, but it is not expressed as an antigen coat. We would also expect to see it in every sample as these are human infections.
+
+Take the cd-hit fasta output, which is only the representative sequences for each cluster (98 total clusters identified) translate it and run a ncbi BLASTp against Trypanosoma (taxid:5690). Additionally I can look at the VSGseq output to see which VSG each sequence aligned to and how much of the assembled sequence aligned to the reference VSG.
+
+I manually removed the following non-VSGs from the dataset:
+
+*Cluster 58 is SRA*
+
+Cluster 82 is putative actin
+
+Cluster 86 is NLI interacting factor-like phosphatase, putative
+
+Cluster 0 is dynein heavy chain
+
+Cluster 61 is RNA-editing complex protein MP42
+
+*Hypothetical Proteins:*
+* cluster 3
+* cluster 1
+* cluster 55
+* cluster 43
+* cluster 21
+* cluster 6
+* cluster 4
+* cluster 19
+* cluster 10
+* cluster 5
+* cluster 9
+* cluster 18
+* cluster 2
+* cluster 16
+
+I should note that none of the hypothetical proteins were able to be typed by the HMM pipeline Find_VSG_Nterm.py
+
+##Import rhodesiense VSG N-term type data
+```{r}
+# create upset plot
+plotdata <- read_csv("FigureData/Mulindwa2018_rhodesienseVSGtyped.csv")
+
+# replace NA with "unknown"
+plotdata <- plotdata %>% mutate(nterm_typesubtype = replace_na(nterm_typesubtype, "unknown"))
+
+```
+
+##Fig. 3A
+```{r}
+
+# number of unique VSG found by patient and fluid
+Fig3A <- plotdata[!plotdata$patient_number == "74", ] %>% 
+  dplyr::group_by(patient_number, fluid) %>%
+  dplyr::summarise(total = n()) %>% 
+  ggplot(aes(x = as.factor(patient_number), y = total, fill = fluid)) + 
+  geom_bar(stat = "identity", size = 0.8) + 
+  scale_fill_manual(values = c("maroon4", "darkcyan")) + 
+  scale_y_continuous(limits = c(0, 40)) +
+  theme_classic(base_size = 22) + 
+  ylab("Number of VSGs") + 
+  labs(fill = "Fluid") +
+  xlab("Patient") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, size = 20), axis.text.y = element_text(size = 20), axis.title = element_text(size = 20),legend.title = element_text(size = 16), legend.text = element_text(size = 14))
+Fig3A
+
+```
+
+Fig. 3B
+```{r}
+
+palette <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
+
+# plot number of VSG by type per patient
+Fig3B <- plotdata[!plotdata$patient_number == "74", ] %>% 
+  dplyr::group_by(patient_number, nterm_typesubtype) %>%
+  dplyr::summarise(total = n()) %>% 
+  ggplot(aes(x = as.factor(patient_number), y = total, fill = nterm_typesubtype)) + 
+  geom_bar(stat = "identity", size = 0.8) + 
+  scale_fill_manual(values = palette) + 
+  scale_y_continuous(limits = c(0, 40)) +
+  theme_classic(base_size = 22) + 
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, size = 20), axis.text.y = element_text(size = 20), axis.title = element_text(size = 20),legend.title = element_text(size = 16), legend.text = element_text(size = 14))+
+  ylab("Number of VSGs") + 
+  labs(fill = "N-terminal Subtype") +
+  xlab("Patient")
+Fig3B
+
+```
+
+Fig. 3C
+```{r}
+# exclude patient 74, it was the only blood RNA-seq library made by poly-A selection
+# all others were rRNA depleted, it therefore should not be directly compared to the others
+tbr_list <- list(
+  CSF58 = unique(as.character(plotdata$cluster[plotdata$patient_number =="58"])),
+  CSF71 = unique(as.character(plotdata$cluster[plotdata$patient_number =="71" & plotdata$fluid == "CSF"])),
+#  pA74 = unique(as.character(plotdata$cluster[plotdata$patient_number =="74"])),
+  rRNA71 = unique(as.character(plotdata$cluster[plotdata$patient_number =="71" & plotdata$fluid == "blood"])),
+  rRNA73 = unique(as.character(plotdata$cluster[plotdata$patient_number =="73"])),
+  rRNA80 = unique(as.character(plotdata$cluster[plotdata$patient_number =="80"])),
+  rRNA81 = unique(as.character(plotdata$cluster[plotdata$patient_number =="81"])))
+
+tbr_upset <- upset(fromList(tbr_list), 
+                   order.by = "degree", nsets = 7, 
+                   nintersects = NA, 
+                   sets.x.label = "VSGs per Patient", 
+                   mainbar.y.label = "Number of VSGs", 
+                   main.bar.color = "gray8", 
+                   mb.ratio = c(0.5, 0.5))
+tbr_upset
+
+# In order to color the rows of the UpSet plot, I need to create a dataframe where the first column is the name of the sets (patient_full_name) and the second column is the variable used to compare the sets (patient_number).
+colormetadata <- data.frame(sample = c("CSF58", "CSF71", "rRNA73", "rRNA81", "rRNA71", "rRNA80"),
+                            patient_number = c("58", "71", "73", "81", "71", "80"),
+                            fluid = c("CSF", "CSF", "blood", "blood", "blood", "blood"))
+
+upset_colors <- upset(fromList(tbr_list), 
+                      sets = c("CSF58", "CSF71", "rRNA73", "rRNA81", "rRNA71", "rRNA80"),
+                      keep.order = TRUE, 
+                      order.by = "degree", 
+                      nintersects = NA, 
+                      line.size = 0.4, 
+                      sets.bar.color = c("darkcyan", "darkcyan", "maroon4", "maroon4", "maroon4", "maroon4"), 
+                      point.size = 2.8, 
+                      text.scale = 1.8, 
+                      mb.ratio = c(0.5, 0.5), 
+                      sets.x.label = "VSGs per Patient", 
+                      mainbar.y.label = "Number of VSGs", 
+                      main.bar.color = "gray8",
+                      set.metadata = list(data = colormetadata, plots = list(list(type = "matrix_rows",
+                                                                                  column = "fluid", 
+                                                                                  colors = c("CSF"="darkcyan", "blood"="maroon4"),
+                                                                                  alpha = 0.6))))
+upset_colors
+
+```
+
+## Supplemental Figure 2
+###Correlation Plots
+```{r}
+# does parasitemia correlate with VSG diversity of infections?
+# estimated parasitemia is listed in the publication for each patient
+# here I will only consider the VSGs detected in the blood
+# parasitemia was estimated from stained thin smears
+rhodCorr <- plotdata[plotdata$fluid == "blood", ] %>% group_by(patient_number) %>% summarise(totalVSG = n())
+#remove patient 74 since it was sequenced differently from the rest and should be excluded
+rhodCorr <- rhodCorr[!rhodCorr$patient_number == "74", ]
+rhodCorr$patient_number <- as.factor(rhodCorr$patient_number)
+#manually enter values for each patient based on table 1 from paper
+rhodCorr$parasites <- c(5100e+04, 4500e+04, 2100e+04, 1100e+04)
+
+# calculate correlation coefficient, method = pearson
+#put it in a dataframe with plot coordinates
+rhod.cor.coeff <- data.frame(cor = as.character(round(cor(rhodCorr[ , "totalVSG"], rhodCorr[ , "parasites"], method = "pearson"), digits = 3)),
+                      x = c(35),
+                      y = c(5.5e+07))
+
+VSGs2 <-
+  ggplot(rhodCorr, aes(x=totalVSG, y=parasites))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Number of Unique VSGs")+
+  ylab("parasites/mL blood")+
+  geom_text(data=rhod.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGs2
+
+typeCorr <- plotdata[plotdata$fluid == "blood" & !plotdata$patient_number == "74", ] %>% 
+  mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% 
+  group_by(patient_number, nterm_type) %>% 
+  summarise(numType = n()) %>% 
+  merge(rhodCorr, ., by="patient_number") %>%
+  mutate(pct = (.$numType / .$totalVSG)*100)
+
+typeCorr
+
+A.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "A" , ] %>% .$pct , typeCorr[typeCorr$nterm == "A" , ] %>% .$parasites, method = "pearson"), digits = 3)),
+                      x = c(50),
+                      y = c(6.5e+7))
+
+VSGsA <- typeCorr[typeCorr$nterm == "A",] %>%
+  ggplot(aes(x=pct, y=parasites))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type A VSG")+
+  ylab("parasites/mL blood")+
+  geom_text(data=A.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsA
+
+B.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "B" , ] %>% .$pct , typeCorr[typeCorr$nterm == "B" , ] %>% .$parasites, method = "pearson"), digits = 3)),
+                      x = c(90),
+                      y = c(6.5e+7))
+
+VSGsB <- typeCorr[typeCorr$nterm == "B",] %>%
+  ggplot(aes(x=pct, y=parasites))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type B VSG")+
+  ylab("parasites/mL blood")+
+  geom_text(data=B.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsB
+
+```

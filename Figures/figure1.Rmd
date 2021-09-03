@@ -1,0 +1,167 @@
+---
+title: "figure1"
+author: "Jaime So"
+date: "8/26/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(reshape2)
+library(UpSetR)
+```
+
+#Generate Plots for Figure 1
+##Parasites isolated from gHAT patients express multiple VSGs
+
+
+###upload summary dataframe
+```{r}
+
+plotdata <- read_csv(file = "FigureData/TbgHighlyExpressed.csv")
+
+```
+
+###Fig. 1B
+```{r}
+
+Fig1B <- plotdata %>% 
+  select(patient_number, location, cluster, nterm_typesubtype) %>% 
+  distinct() 
+
+Fig1B$patient_number <- factor(Fig1B$patient_number, levels = c("1", "2", "3", "11", "12", "13", "17", "19", "23", "29", "30", "33"))
+
+patient_VSGs.graph = Fig1B %>% 
+  ggplot(aes(x = patient_number, group = patient_number, fill=location))+
+  geom_bar(stat = "count", size = 0.8, y=0.2, position = position_dodge())+
+  theme_classic(base_size = 22)+
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 6))+
+  scale_fill_manual(values = c("A"="darkgoldenrod1",
+                               "B"="olivedrab4",
+                               "C"="darkcyan",
+                               "D"="maroon4",
+                               "E"="orangered2"))+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, size = 20), 
+        axis.text.y = element_text(size = 20), 
+        axis.title = element_text(size = 20),
+        legend.title = element_text(size = 16), 
+        legend.text = element_text(size = 14))+
+  labs(x = "Patient", y = "Number of VSGs")
+patient_VSGs.graph
+
+```
+
+###Fig. 1C
+```{r}
+# upset plots are created by finding intersecting values in lists. make the dataframe into a list
+upsetList <- list(
+  patient1 = unique(as.character(plotdata$cluster[plotdata$patient_number =="1"])),
+  patient2 = unique(as.character(plotdata$cluster[plotdata$patient_number =="2"])),
+  patient3 = unique(as.character(plotdata$cluster[plotdata$patient_number =="3"])),
+  patient11 = unique(as.character(plotdata$cluster[plotdata$patient_number =="11"])),
+  patient12 = unique(as.character(plotdata$cluster[plotdata$patient_number =="12"])),
+  patient13 = unique(as.character(plotdata$cluster[plotdata$patient_number =="13"])),
+  patient17 = unique(as.character(plotdata$cluster[plotdata$patient_number =="17"])),
+  patient19 = unique(as.character(plotdata$cluster[plotdata$patient_number =="19"])),
+  patient23 = unique(as.character(plotdata$cluster[plotdata$patient_number =="23"])),
+  patient29 = unique(as.character(plotdata$cluster[plotdata$patient_number =="29"])),
+  patient30 = unique(as.character(plotdata$cluster[plotdata$patient_number =="30"])),
+  patient33 = unique(as.character(plotdata$cluster[plotdata$patient_number =="33"])))
+
+# In order to color the rows of the UpSet plot, I need to create a dataframe where the first column is the name of the sets (patient_full_name) and the second column is the variable used to compare the sets (patient_number).
+
+patient_meta = data.frame(patient_full_name = c("patient1", "patient2", "patient3", "patient11", "patient12", "patient13", "patient17", "patient19", "patient23", "patient29", "patient30", "patient33"),
+                          patient_number = factor(c("1", "2", "3", "11", "12", "13", "17", "19", "23", "29", "30", "33")))
+patient_meta
+
+plotdata$patient_number <- factor(plotdata$patient_number, levels = c("1", "2", "3", "11", "12", "13", "17", "19", "23", "29", "30", "33"))
+
+# Here I merge the patient_meta dataframe created above.
+patient_meta_merge = left_join(patient_meta, plotdata)
+patient_meta_merge$patient_full_name = as.character(patient_meta_merge$patient_full_name)
+patient_meta_merge
+
+upset_colors_1C <-
+upset(fromList(upsetList), 
+      sets = c("patient33", "patient30", "patient29", "patient23", "patient19", "patient17", "patient13", "patient12", "patient11", "patient3", "patient2", "patient1"), 
+      keep.order = TRUE, order.by = "degree", nintersects = NA, line.size = 0.4, 
+      sets.bar.color = c("orangered2", "olivedrab4", "olivedrab4", "maroon4", "darkcyan", "darkcyan", "darkcyan", "darkcyan", "darkcyan", "darkgoldenrod1", "darkgoldenrod1", "darkgoldenrod1"), point.size = 2.8, text.scale = 1.8, mb.ratio = c(0.5, 0.5), 
+      sets.x.label = "VSGs per Patient", 
+      mainbar.y.label = "Number of VSGs", 
+      main.bar.color = "gray8", 
+      set.metadata = list(data = patient_meta_merge, plots = list(list(type = "matrix_rows", column = "location", colors = c("A"="darkgoldenrod1",
+                                    "C"="darkcyan",
+                                    "D"="maroon4",
+                                    "B"="olivedrab4",
+                                    "E"="orangered2"), alpha = 0.6))))
+upset_colors_1C
+
+```
+
+##Supplemental Figure 2
+###Tbg Correlation Plots
+```{r}
+# manually enter mean SL-RNA Ct value from table 1
+
+SL_Ct <- tibble(patient_number = c(1,2,3,11,12,13,17,19,23,29,30,33),
+                meanSL = c(22.155,19.020,28.780,22.030,25.430,26.635,24.495,28.245,27.085,28.320,22.960,32.385))
+SL_Ct
+
+
+gambCorr <- plotdata %>% select("patient_number", "cluster") %>% distinct() %>% group_by(patient_number) %>% summarise(totalVSG = n()) %>% merge(SL_Ct, .)
+gambCorr
+
+gamb.cor.coeff <- data.frame(cor = as.character(round(cor(gambCorr[ , "totalVSG"], gambCorr[ , "meanSL"], method = "pearson"), digits = 3)),
+                      x = c(10),
+                      y = c(35))
+
+Ct_VSGs = gambCorr %>%
+  ggplot(aes(x=totalVSG, y=meanSL))+
+  geom_point(stat = "identity")+
+  theme_classic()+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Number of Unique VSGs")+
+  ylab("Mean Ct")+
+  geom_text(data=gamb.cor.coeff, aes(label=cor, x=x, y=y))
+Ct_VSGs
+
+typeCorr <- plotdata %>% select("patient_number", "cluster", "nterm_typesubtype") %>% distinct() %>% 
+  mutate(nterm_type = sub("[[:digit:]]", "", .$nterm_typesubtype)) %>% 
+  group_by(patient_number, nterm_type) %>% 
+  summarise(numType = n()) %>% 
+  merge(gambCorr, ., by="patient_number") %>%
+  mutate(pct = (.$numType / .$totalVSG)*100)
+
+typeCorr
+
+A.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "A" , ] %>% .$pct , typeCorr[typeCorr$nterm == "A" , ] %>% .$meanSL, method = "pearson"), digits = 3)),
+                      x = c(55),
+                      y = c(35))
+
+VSGsA <- typeCorr[typeCorr$nterm == "A",] %>%
+  ggplot(aes(x=pct, y=meanSL))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type A VSG")+
+  ylab("Mean Ct")+
+  geom_text(data=A.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsA
+
+B.cor.coeff <- data.frame(cor = as.character(round(cor(typeCorr[typeCorr$nterm == "B" , ] %>% .$pct , typeCorr[typeCorr$nterm == "B" , ] %>% .$meanSL, method = "pearson"), digits = 3)),
+                      x = c(100),
+                      y = c(35))
+
+VSGsB <- typeCorr[typeCorr$nterm == "B",] %>%
+  ggplot(aes(x=pct, y=meanSL))+
+  geom_point(stat = "identity")+
+  geom_smooth(method = lm, color = "black", se = FALSE)+
+  xlab("Percent Type B VSG")+
+  ylab("Mean Ct")+
+  geom_text(data=B.cor.coeff, aes(label=cor, x=x, y=y))+
+  theme_classic()
+VSGsB
+```
