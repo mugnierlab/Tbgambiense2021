@@ -22,10 +22,11 @@ library(reshape2)
 
 palette2B <- c("#ffd968", "#eb7d2f", "#9a1b30")
 
-typeCompare <- read_csv("FigureData/VSGTypeMethodCompare-noPatientTree.csv")
+typeCompare <- read_csv("FigureData/Supptable4_nterm_method_compare.csv")
 
 tree_compare <- typeCompare %>%
-  filter(blastTree_type != "Gam" & blastTree_type != "Rho") %>%
+  filter(blastTree_type != "not done") %>%
+  .[!grepl("Gambiense", .$original_seqID), ] %>%
   mutate(VSG = "Lister 427") %>%
   mutate( 
     assessment = case_when(
@@ -44,15 +45,8 @@ tree_compare <- typeCompare %>%
   select(VSG, assessment, count)
 
 
-ggplot(tree_compare, aes(x = count, fill = assessment)) + 
-  geom_bar() +
-  xlab("number of methods in agreement")
-
-
-gambiense_comparison <- read_csv("FigureData/GambienseTypeMethodCompare.csv")
-
-
-gam_compare <- gambiense_comparison%>%
+gam_compare <- typeCompare %>%
+  .[grepl("Gambiense", .$original_seqID), ] %>%
   mutate(VSG = "gHAT Patient")%>%
   mutate( 
     assessment = case_when(
@@ -85,12 +79,12 @@ Fig2B
 
 ##Fig. 2C
 ```{r}
-view(read_csv("FigureData/TbgHighlyExpressed.csv"))
+view(read_csv("FigureData/Supptable3_tbgVSGexpression.csv"))
 
 palette2C <- c("skyblue", "steelblue1", "steelblue", "tomato", "red3", "lightgrey")
 # plot number of VSG by type per patient
-Fig2C <- read_csv("FigureData/TbgHighlyExpressed.csv") %>% 
-  select(c("patient_number", "cluster", "nterm_typesubtype")) %>% 
+Fig2C <- read_csv("FigureData/Supptable3_tbgVSGexpression.csv") %>% 
+  select(c("patient_number", "cdHit_ID", "nterm_typesubtype")) %>% 
   distinct() %>% 
   dplyr::group_by(patient_number, nterm_typesubtype) %>% 
   dplyr::summarise(total = n()) %>%
