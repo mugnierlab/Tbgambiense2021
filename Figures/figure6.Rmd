@@ -378,8 +378,8 @@ eigen_test %>% summarize(count = n())
 #plots
 
 #count of N-type by C-type
-CN_df <- read.csv("FigureData/TbgHighlyExpressed.csv") %>%
-  select(cluster, nterm_typesubtype, cterm_type) %>%
+CN_df <- read.csv("FigureData/Supptable3_tbgVSGexpression.csv") %>%
+  select(cdHit_ID, nterm_typesubtype, cterm_type) %>%
   distinct() %>%
   group_by(cterm_type, nterm_typesubtype) %>%
   summarise(count = n())
@@ -387,8 +387,8 @@ CN_df <- read.csv("FigureData/TbgHighlyExpressed.csv") %>%
 
 
 #N-term on x axis
-NxC <- read.csv("FigureData/TbgHighlyExpressed.csv") %>%
-  select(cluster, nterm_typesubtype, cterm_type) %>%
+NxC <- read.csv("FigureData/Supptable3_tbgVSGexpression.csv") %>%
+  select(cdHit_ID, nterm_typesubtype, cterm_type) %>%
   distinct() %>%
   group_by(nterm_typesubtype, cterm_type) %>%
   summarise(count = n())
@@ -425,8 +425,8 @@ NxC %>%
 ###Figure 6F
 ```{r}
 #C-type by location
-loc_C <- read.csv("FigureData/TbgHighlyExpressed.csv") %>%
-  select("location", "patient_number", "cluster", "cterm_type") %>%
+loc_C <- read.csv("FigureData/Supptable3_tbgVSGexpression.csv") %>%
+  select("location", "patient_number", "cdHit_ID", "cterm_type") %>%
   distinct() %>%
   group_by(location, cterm_type) %>%
   summarise(count = n())
