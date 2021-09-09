@@ -22,7 +22,7 @@ library(reshape2)
 
 palette2B <- c("#ffd968", "#eb7d2f", "#9a1b30")
 
-typeCompare <- read_csv("FigureData/SuppTable5VSGTypeMethodCompare.csv")
+typeCompare <- read_csv("FigureData/VSGTypeMethodCompare-noPatientTree.csv")
 
 tree_compare <- typeCompare %>%
   filter(blastTree_type != "Gam" & blastTree_type != "Rho") %>%
