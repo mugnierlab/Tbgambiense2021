@@ -1,5 +1,8 @@
 # Data File Contents:
 
+* "AllPatient_orf_VSGs_merged-translated_NtermSummary.csv" raw HMM N-terminal typing output for assembled Tbg patient VSG sequences
+* "GenomeMappingMetadata.txt" table of metadata associated with Tbg field isolate whole genome sequencing datasets
+* "Phyre2_summaryinfo.txt" Phyre2 structure prediction results summmary
 * "All_VSG_BLASTtreeNterm.types.xlsx" an excel table detailing the N-terminal domain type for each sequence ID as determined by the BLASTp tree analysis
 * "Cross et al.csv" a table of N-terminal and C-terminal domain type classifications from previous publications, presented in doi:10.1016/j.molbiopara.2014.06.004
 * "CterminalNetwork.csv" the table of pairwise BLASTp results of C-terminal domain sequences used to generate a network plot in igraph
