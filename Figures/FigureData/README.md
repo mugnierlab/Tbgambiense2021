@@ -12,9 +12,7 @@
 * "NetworkPlot_clusterReference.csv" a reference to match Trinity IDs to cluster names which were used to compare VSG sequences which assembled in multiple patients
 * "NterminalNetwork.csv" the table of pairwise BLASTp results of N-terminal domain sequences used to generate network plots in igraph
 * "Phyre2_summaryinfo.txt" Phyre2 structure prediction results summmary
-* "Supptable3_tbgVSGexpression.csv" paper supplemental table detailing the highly expressed T.b. gambiense VSG expression level, N-terminal type as determined by HMM, and C-terminal type as determined by igraph network.
-* "Supptable4_nterm_method_compare" paper supplemental table comparing the N-terminal domain typing results of three different methods for tb427 and patient VSG
-* "Supptable5_tbrVSGexpression.csv" paper supplemental table detailing highly expressed T.b. rhodesiense patient VSG expression level and N-terminal domain type as determined by HMM
+* RData image associated with figure 5 markdown
 * "TbgAssembledVSG.csv" merged VSG-seq and HMM typing results for assembled T.b. gambiense patients which met 1% sequence quality cutoff. used to generate heatmap
 * "TbgHighlyExpressed.csv" HMM typing and C-terminal network results for the highly expressed T.b. gambiense VSG which met 1% cutoff in at least two technical replicates
 * "VSG.TbruceigambienseDAL972_NtermSummary.csv" HMM N-terminal typing results for VSG sequences extracted from TbgDAL972 reference genome
