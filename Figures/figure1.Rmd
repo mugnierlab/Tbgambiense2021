@@ -21,7 +21,7 @@ library(UpSetR)
 ###upload summary dataframe
 ```{r}
 
-plotdata <- read_csv(file = "FigureData/Supptable3_tbgVSGexpression.csv")
+plotdata <- read_csv(file = "Supptable3_tbgVSGexpression.csv")
 
 ```
 
