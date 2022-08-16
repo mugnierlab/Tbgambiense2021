@@ -64,7 +64,7 @@ I should note that none of the hypothetical proteins were able to be typed by th
 ##Import rhodesiense VSG N-term type data
 ```{r}
 # create upset plot
-plotdata <- read_csv("FigureData/Supptable5_tbrVSGexpression.csv")
+plotdata <- read_csv("Supptable5_tbrVSGexpression.csv")
 
 # replace NA with "unknown"
 plotdata <- plotdata %>% mutate(nterm_typesubtype = replace_na(nterm_typesubtype, "unknown"))
