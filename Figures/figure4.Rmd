@@ -139,7 +139,7 @@ Tb427types <- read_csv("FigureData/VSG.TbruceiLister427_2018_NtermSummary.csv")
 DAL972types <- read_csv("FigureData/VSG.TbruceigambienseDAL972_NtermSummary.csv")
 
 # import rhodesiense patient data
-rhodesiense <- read_csv("FigureData/Supptable5_tbrVSGexpression.csv")
+rhodesiense <- read_csv("Supptable5_tbrVSGexpression.csv")
 #drop patient 74 since it was sequenced differently than all the others
 rhodesiense <- rhodesiense[!rhodesiense$patient_number == "74", ]
 
