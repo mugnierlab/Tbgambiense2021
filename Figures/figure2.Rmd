@@ -22,7 +22,7 @@ library(reshape2)
 
 palette2B <- c("#ffd968", "#eb7d2f", "#9a1b30")
 
-typeCompare <- read_csv("FigureData/Supptable4_nterm_method_compare.csv")
+typeCompare <- read_csv("Supptable4_nterm_method_compare.csv")
 
 tree_compare <- typeCompare %>%
   filter(blastTree_type != "not done") %>%
@@ -84,11 +84,11 @@ Fig2B
 
 ##Fig. 2C
 ```{r}
-view(read_csv("FigureData/Supptable3_tbgVSGexpression.csv"))
+view(read_csv("Supptable3_tbgVSGexpression.csv"))
 
 palette2C <- c("#9EC3E0", "#2A84C6", "#0B4063", "#E17AA2", "#A1324D", "lightgrey")
 # plot number of VSG by type per patient
-Fig2C <- read_csv("FigureData/Supptable3_tbgVSGexpression.csv") %>% 
+Fig2C <- read_csv("Supptable3_tbgVSGexpression.csv") %>% 
   select(c("patient_number", "cdHit_ID", "nterm_typesubtype")) %>% 
   distinct() %>% 
   dplyr::group_by(patient_number, nterm_typesubtype) %>% 
