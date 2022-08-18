@@ -1,7 +1,7 @@
 # R markdown notes and code for generating figures
 
 * Data files necessary for running are either in supplemental tables or in the subdirectory: FigureData/
-* All markdown files should run from current directory.
+* All markdown files should run from current directory, except figure 5 which has associated data saved as an RData image.
 
 Supplemental Tables 
 * "Supptable3_tbgVSGexpression.csv" paper supplemental table detailing the highly expressed T.b. gambiense VSG expression level, N-terminal type as determined by HMM, and C-terminal type as determined by igraph network.
