@@ -1,4 +1,5 @@
 # Tbgambiense2021
+Raw sequencing data for this study available at https://www.ncbi.nlm.nih.gov/bioproject/?term=PRJNA751607
 
 Supplemental files for our study of trypanosomal variant surface glycoprotein expression in human patients, manuscript currently in pre-print.
 * "Figures" directory contains R markdown code used to generate each figure along with associated data tables.
